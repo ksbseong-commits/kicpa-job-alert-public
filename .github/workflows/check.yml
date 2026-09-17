@@ -1,0 +1,43 @@
+name: check-postings
+
+on:
+  workflow_dispatch: {}
+  repository_dispatch:
+    types: [check-postings]
+  schedule:
+    - cron: "0 * * * *"  # 안전망: cron-job.org가 죽어도 최소 1시간마다는 돈다
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kicpa-scraper
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run scraper
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scraper.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "kicpa-job-alert-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "update state [skip ci]"
+            git push
+          else
+            echo "no state change"
+          fi
