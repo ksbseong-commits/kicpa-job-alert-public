@@ -35,9 +35,20 @@ jobs:
           git config user.name "kicpa-job-alert-bot"
           git config user.email "actions@users.noreply.github.com"
           git add state.json
-          if ! git diff --cached --quiet; then
-            git commit -m "update state [skip ci]"
-            git push
-          else
+          if git diff --cached --quiet; then
             echo "no state change"
+            exit 0
           fi
+          git commit -m "update state [skip ci]"
+          # 1분 간격으로 도는데 한 회차가 1분을 넘길 때가 있어, 앞 회차가 먼저 push하면
+          # 이 회차는 낡은 커밋 기준이라 거부된다(non-fast-forward). rebase 후 재시도한다.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "push rejected; rebasing and retrying ($attempt/5)"
+            git pull --rebase --autostash origin main || exit 1
+          done
+          echo "push failed after 5 attempts"
+          exit 1
