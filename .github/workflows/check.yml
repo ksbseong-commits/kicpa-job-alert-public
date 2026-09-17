@@ -19,6 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 기본값은 run 생성 시점의 커밋(GITHUB_SHA)이라, concurrency 대기 중 앞 회차가
+          # state.json을 push하면 낡은 state로 돌게 되고 push 시 rebase 충돌로 실패한다.
+          # 브랜치명을 주면 체크아웃 시점의 최신 커밋을 가져온다.
+          ref: main
 
       - uses: actions/setup-python@v5
         with:
