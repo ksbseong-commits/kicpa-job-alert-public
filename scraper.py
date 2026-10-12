@@ -5,6 +5,8 @@ import http.cookiejar
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import urllib.parse
 import urllib.request
@@ -160,11 +162,35 @@ def send_telegram_message(text, buttons):
 
 # ---- 삼일/삼정/안진: 제목+링크만 가져오는 간단 소스 ----
 
+def chrome_dump_dom(url, timeout=75):
+    """Akamai가 urllib 접속(과 GitHub 러너 IP의 일반 HTTP 요청)을 403으로 막는 사이트용.
+    실제 headless Chrome으로 열면 통과하므로, 렌더링된 DOM을 받아온다."""
+    binary = os.environ.get("CHROME_BIN") or next(
+        (b for n in ("google-chrome", "chromium", "chromium-browser", "chrome") if (b := shutil.which(n))), None
+    )
+    if not binary:
+        raise RuntimeError("Chrome 실행 파일을 찾을 수 없음")
+    proc = subprocess.run(
+        [binary, "--headless=new", "--no-sandbox", "--disable-gpu", "--virtual-time-budget=8000", "--dump-dom", url],
+        capture_output=True, timeout=timeout,
+    )
+    out = proc.stdout.decode("utf-8", errors="replace")
+    if not out.strip():
+        raise RuntimeError(f"Chrome이 빈 응답을 반환 (exit={proc.returncode})")
+    return out
+
+
 def fetch_pwc():
-    page_html = http_get("https://www.pwc.com/kr/ko/career/experienced.html")
+    list_url = "https://www.pwc.com/kr/ko/career/experienced.html"
+    try:
+        page_html = http_get(list_url)
+    except Exception as e:
+        print(f"[pwc] direct fetch failed ({e}); retrying with headless Chrome", file=sys.stderr)
+        page_html = chrome_dump_dom(list_url)
     m = re.search(r"Job title.*?</table>", page_html, re.DOTALL)
     if not m:
-        return []
+        # 차단 페이지 등으로 표가 없으면 '공고 0건'이 아니라 실패로 취급해 연속 실패 알림에 잡히게 한다
+        raise RuntimeError("삼일 채용 표(Job title)를 찾지 못함")
     table = m.group(0)
     items = []
     for tm in re.finditer(r'<tr><td><a href="([^"]+)">([^<]+)</a></td>', table):
