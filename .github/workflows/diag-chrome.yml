@@ -1,0 +1,16 @@
+name: diag-chrome
+on:
+  workflow_dispatch: {}
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Headless Chrome fetch of PwC list
+        run: |
+          which google-chrome chromium chromium-browser || true
+          timeout 90 google-chrome --headless=new --no-sandbox --disable-gpu --virtual-time-budget=8000 --dump-dom "https://www.pwc.com/kr/ko/career/experienced.html" > out.html 2> err.txt || true
+          wc -c out.html
+          grep -o '<title>[^<]*' out.html || true
+          grep -o 'r26[0-9-]*\.html' out.html | sort -u | tail -5 || true
+          head -c 300 err.txt || true
