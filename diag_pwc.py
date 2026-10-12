@@ -36,3 +36,9 @@ for name, h in HEADER_SETS.items():
                 t = re.search(r"<title>([^<]*)", body)
                 extra = f"title={t.group(1).strip() if t else None}"
             print(f"{name:12} {label:4} try{i+1} -> {st} len={len(body)} {extra}", flush=True)
+
+print("=== jina proxy ===")
+for label, url in (("list", LIST), ("job", JOB)):
+    for hdr in ({}, {"X-Return-Format": "html"}):
+        st, body = get("https://r.jina.ai/" + url, {"User-Agent": CHROME, **hdr})
+        print(f"jina {label} {hdr} -> {st} len={len(body)} has_r261007={'r261007' in body} head={body[:200]!r}", flush=True)

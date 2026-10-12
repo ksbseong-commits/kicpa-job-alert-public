@@ -252,13 +252,14 @@ def fetch_ey():
 
 
 SIMPLE_SOURCES = {
-    "pwc": {"fetch": fetch_pwc, "label": "삼일회계법인"},
-    "deloitte": {"fetch": fetch_deloitte, "label": "안진회계법인"},
-    "kpmg": {"fetch": fetch_kpmg, "label": "삼정회계법인"},
-    "ey": {"fetch": fetch_ey, "label": "한영회계법인(EY)"},
+    "pwc": {"fetch": fetch_pwc, "label": "삼일회계법인", "page_url": "https://www.pwc.com/kr/ko/career/experienced.html"},
+    "deloitte": {"fetch": fetch_deloitte, "label": "안진회계법인", "page_url": "https://join.deloitte.co.kr/WiseRecruit2/User/RecruitList.aspx?OrgOption=10"},
+    "kpmg": {"fetch": fetch_kpmg, "label": "삼정회계법인", "page_url": KPMG_LIST_URL},
+    "ey": {"fetch": fetch_ey, "label": "한영회계법인(EY)", "page_url": "https://eycareers-kr.recruiter.co.kr/career/career"},
 }
 
 
+FETCH_FAIL_ALERT_THRESHOLD = 60  # 크론 1분 간격 기준 약 1시간 연속 실패하면 한 번 텔레그램으로 알린다
 EDIT_SCAN_INTERVAL_SECONDS = 3600  # 크론이 1분마다 돌아도, 이미 본 글의 '내용 수정' 재확인은 이 주기로만 한다
 
 
@@ -374,11 +375,29 @@ def main():
 
     for source_key, cfg in SIMPLE_SOURCES.items():
         seen = set(state["seen"].get(source_key, []))
+        fail_counts = state.setdefault("fetch_fail", {})
         try:
             items = cfg["fetch"]()
         except Exception as e:
             print(f"[{source_key}] fetch failed: {e}", file=sys.stderr)
+            fail_counts[source_key] = fail_counts.get(source_key, 0) + 1
+            if fail_counts[source_key] == FETCH_FAIL_ALERT_THRESHOLD:
+                try:
+                    send_telegram_message(
+                        f"[{cfg['label']}] 공고 목록을 {FETCH_FAIL_ALERT_THRESHOLD}회 연속 못 가져오고 있습니다 ({e}). "
+                        "그동안 올라온 공고는 알림이 가지 않으니 직접 확인해 주세요.",
+                        [("채용 페이지 열기", cfg["page_url"])],
+                    )
+                    sent_count += 1
+                except Exception as e2:
+                    print(f"[{source_key}] failure alert send failed: {e2}", file=sys.stderr)
             continue
+        if fail_counts.get(source_key, 0) >= FETCH_FAIL_ALERT_THRESHOLD:
+            try:
+                send_telegram_message(f"[{cfg['label']}] 공고 목록 조회가 다시 정상화됐습니다.", [("채용 페이지 열기", cfg["page_url"])])
+            except Exception as e2:
+                print(f"[{source_key}] recovery alert send failed: {e2}", file=sys.stderr)
+        fail_counts[source_key] = 0
 
         new_items = [(iid, title, url, reg_date) for iid, title, url, reg_date in items if iid not in seen]
 
