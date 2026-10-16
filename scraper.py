@@ -285,8 +285,146 @@ SIMPLE_SOURCES = {
 }
 
 
+# ---- 한국세무사회 구인게시판(수습ㆍ근무세무사): 조사업무 키워드가 있는 공고만 알린다 ----
+
+KACPTA_BASE = "https://www.kacpta.or.kr/license_view/jobSearch/"
+KACPTA_LIST_URL = KACPTA_BASE + "jobSearch_List_n.asp?rcode1=0101&rcode2=1701&rcode3=4&page={}"
+KACPTA_DETAIL_URL = KACPTA_BASE + "jobSearch_Read_n.asp?no={}&rcode1=0101&rcode2=1701&rcode3=4"
+KACPTA_MAX_PAGES = 10  # 게시판 전체가 보통 2~3쪽(쪽당 15건)이라 넉넉한 상한
+# '세무조사', '조사대응', '세무조사 대행' 등. 상세 본문(메뉴 제외)에서만 찾는다.
+KACPTA_KEYWORD_RE = re.compile(r"조사")
+
+
+def kacpta_get(url):
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read().decode("cp949", errors="replace")
+
+
+def kacpta_parse_list(page_html):
+    """반환: (게시글번호, 사무실형태(개인/법인), 회사명) 목록"""
+    row_re = re.compile(
+        r'<td[^>]*rowspan="3"[^>]*>\s*(개인|법인)\s*</td>.*?jobSearch_Read_n\.asp\?no=(\d+)[^"]*">\s*(.*?)\s*</a>',
+        re.DOTALL,
+    )
+    return [(m.group(2), m.group(1), html.unescape(re.sub(r"\s+", " ", m.group(3)).strip())) for m in row_re.finditer(page_html)]
+
+
+def kacpta_fetch_list():
+    items, ids = [], set()
+    for page in range(1, KACPTA_MAX_PAGES + 1):
+        rows = kacpta_parse_list(kacpta_get(KACPTA_LIST_URL.format(page)))
+        rows = [r for r in rows if r[0] not in ids]
+        if not rows:
+            break
+        ids.update(r[0] for r in rows)
+        items.extend(rows)
+    if not items:
+        # 차단·구조 변경 등으로 0건이면 '공고 없음'이 아니라 실패로 취급한다
+        raise RuntimeError("세무사회 구인게시판 목록을 파싱하지 못함")
+    return items
+
+
+def kacpta_field(detail_html, label):
+    m = re.search(r"<b>" + re.escape(label) + r"</b>\s*</td>\s*<td[^>]*>(.*?)</td>", detail_html, re.DOTALL)
+    if not m:
+        return ""
+    return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1)))).strip()
+
+
+def kacpta_body_text(detail_html):
+    """좌측 메뉴('조세불복 지원센터' 등)를 빼고 공고 본문만 평문으로."""
+    t = re.sub(r"<script.*?</script>|<style.*?</style>|<!--.*?-->", "", detail_html, flags=re.DOTALL)
+    t = html.unescape(re.sub(r"<[^>]+>", " ", t))
+    t = re.sub(r"\s+", " ", t)
+    start = t.find("구인업체 정보")
+    return t[start:] if start != -1 else ""
+
+
+def kacpta_career(detail_html):
+    m = re.search(r"경력요건</td>.*?<td>.*?</td>\s*<td>\s*(.*?)\s*</td>", detail_html, re.DOTALL)
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+
+
 FETCH_FAIL_ALERT_THRESHOLD = 60  # 크론 1분 간격 기준 약 1시간 연속 실패하면 한 번 텔레그램으로 알린다
 EDIT_SCAN_INTERVAL_SECONDS = 3600  # 크론이 1분마다 돌아도, 이미 본 글의 '내용 수정' 재확인은 이 주기로만 한다
+
+
+def check_kacpta(state):
+    """새로 올라온 세무사 구인공고 중 본문에 '조사'가 있는 것만 알린다. 반환: 보낸 알림 수."""
+    source_key, label = "kacpta_tax", "세무사회 구인(세무조사)"
+    page_url = KACPTA_LIST_URL.format(1)
+    seen = set(state["seen"].get(source_key, []))
+    fail_counts = state.setdefault("fetch_fail", {})
+    sent = 0
+    try:
+        items = kacpta_fetch_list()
+    except Exception as e:
+        print(f"[{source_key}] fetch failed: {e}", file=sys.stderr)
+        fail_counts[source_key] = fail_counts.get(source_key, 0) + 1
+        if fail_counts[source_key] == FETCH_FAIL_ALERT_THRESHOLD:
+            try:
+                send_telegram_message(
+                    f"[{label}] 공고 목록을 {FETCH_FAIL_ALERT_THRESHOLD}회 연속 못 가져오고 있습니다 ({e}). "
+                    "그동안 올라온 공고는 알림이 가지 않으니 직접 확인해 주세요.",
+                    [("구인게시판 열기", page_url)],
+                )
+                sent += 1
+            except Exception as e2:
+                print(f"[{source_key}] failure alert send failed: {e2}", file=sys.stderr)
+        return sent
+    if fail_counts.get(source_key, 0) >= FETCH_FAIL_ALERT_THRESHOLD:
+        try:
+            send_telegram_message(f"[{label}] 공고 목록 조회가 다시 정상화됐습니다.", [("구인게시판 열기", page_url)])
+        except Exception as e2:
+            print(f"[{source_key}] recovery alert send failed: {e2}", file=sys.stderr)
+    fail_counts[source_key] = 0
+
+    if not seen:
+        print(f"[{source_key}] priming: marking {len(items)} existing postings as seen (no notify)")
+        state["seen"][source_key] = sorted(r[0] for r in items)
+        return sent
+
+    # 게시글 번호가 오름차순으로 발급되므로, 번호 순으로 처리하면 오래된 글부터 알림이 간다
+    for no, office_type, company in sorted((r for r in items if r[0] not in seen), key=lambda r: int(r[0])):
+        detail_url = KACPTA_DETAIL_URL.format(no)
+        try:
+            detail_html = kacpta_get(detail_url)
+        except Exception as e:
+            # seen에 넣지 않아 다음 회차에 다시 시도한다
+            print(f"[{source_key}] detail fetch failed for {no}: {e}", file=sys.stderr)
+            continue
+        seen.add(no)
+
+        body = kacpta_body_text(detail_html)
+        m = KACPTA_KEYWORD_RE.search(body)
+        if not m:
+            print(f"[{source_key}] no keyword, skip: {company} ({no})")
+            continue
+
+        duty = kacpta_field(detail_html, "업 무 내 용")
+        lines = [
+            f"[{label}] {company} ({office_type})",
+            f"모집기간: {kacpta_field(detail_html, '모 집 기 간') or '상세 참조'}",
+            "",
+            f"업무내용: {duty}",
+            f"고용형태: {kacpta_field(detail_html, '고 용 형 태')}",
+            f"경력: {kacpta_career(detail_html)}",
+            f"근무지역: {kacpta_field(detail_html, '근 무 지 역')}",
+        ]
+        if m.group(0) not in duty:
+            lines.append(f"키워드 위치: …{body[max(0, m.start() - 40):m.end() + 40]}…")
+        email = extract_email(body)
+        buttons = [("공고 원문 보기", detail_url), ("메일로 보내기", build_mail_url(email))]
+        try:
+            send_telegram_message("\n".join(lines), buttons)
+            sent += 1
+            print(f"[{source_key}] sent: {company} ({no})")
+        except Exception as e:
+            print(f"[{source_key}] telegram send failed for {no}: {e}", file=sys.stderr)
+
+    state["seen"][source_key] = sorted(seen)
+    return sent
 
 
 def main():
@@ -449,6 +587,8 @@ def main():
                 print(f"[{source_key}] telegram send failed for {iid}: {e}", file=sys.stderr)
 
         state["seen"][source_key] = sorted(seen)
+
+    sent_count += check_kacpta(state)
 
     state["known_emails"] = sorted(known_emails)
 
