@@ -987,7 +987,7 @@
   ],
   "last_edit_scan": {
     "cpa": "2026-10-19T12:43:17.847142",
-    "new_cpa": "2026-10-19T11:47:23.545188"
+    "new_cpa": "2026-10-19T12:48:21.140651"
   },
   "reg_dates": {
     "cpa": {
@@ -1285,7 +1285,7 @@
   },
   "fetch_fail": {
     "pwc": 0,
-    "deloitte": 0,
+    "deloitte": 1,
     "kpmg": 0,
     "ey": 0,
     "kacpta_tax": 0
