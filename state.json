@@ -882,7 +882,7 @@
       "1792483876753": "86343ff0dd660aeb87e8e00e2cfc45d34bc2242ba930a2bad7bc2cb5ba26dd04",
       "1792490326435": "53f4f8a06b8057e8cfad57e119d9e8498c1fdc6dda5ec0402d103d0d56e9f799",
       "1792541497572": "74ef8fc053a45d014d93c9cafc9f506e70502ce2f6f57f3ae2b6b0ffc684d73e",
-      "1792546391750": "f2106ac2c313a526830a085ca48d4ec8afcc534b92fe5fb508f429692e12d09a"
+      "1792546391750": "1f05bfdfd7bd0a7e3e9667a810b4882f3ee309a627b458de936f887856710f2e"
     }
   },
   "known_emails": [
@@ -1022,7 +1022,7 @@
     "ffc3302d300445278f1c6c74f76f876dcbf5d2c0c26933247849524eefd59c24"
   ],
   "last_edit_scan": {
-    "cpa": "2026-10-21T01:05:23.111829",
+    "cpa": "2026-10-21T02:06:23.173488",
     "new_cpa": "2026-10-21T01:08:21.235473"
   },
   "reg_dates": {
@@ -1330,7 +1330,7 @@
   },
   "fetch_fail": {
     "pwc": 0,
-    "deloitte": 0,
+    "deloitte": 1,
     "kpmg": 0,
     "ey": 0,
     "kacpta_tax": 0
