@@ -1532,7 +1532,7 @@
     }
   },
   "fetch_fail": {
-    "pwc": 1,
+    "pwc": 0,
     "deloitte": 0,
     "kpmg": 0,
     "ey": 0,
