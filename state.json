@@ -1557,9 +1557,9 @@
   },
   "fetch_fail": {
     "pwc": 0,
-    "deloitte": 0,
+    "deloitte": 1,
     "kpmg": 0,
     "ey": 0,
-    "kacpta_tax": 0
+    "kacpta_tax": 1
   }
 }
